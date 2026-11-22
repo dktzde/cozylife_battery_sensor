@@ -158,7 +158,16 @@ def test_restores_the_older_add_on_format() -> None:
 
 @pytest.mark.parametrize(
     "data",
-    [None, [], "x", {"last": "x", "intervals": ["a"]}, {"last": 5.0, "intervals": [1.0]}],
+    [
+        None,
+        [],
+        "x",
+        {"last": "x", "intervals": ["a"]},
+        {"last": 5.0, "intervals": [1.0]},
+        {"last": 5.0, "intervals": {"3525": 1}},
+        # a lone wake-up is no baseline after a restart
+        {"last": 5.0, "intervals": []},
+    ],
 )
 def test_broken_storage_leaves_the_schedule_unlocked(data: object) -> None:
     restored = _schedule()

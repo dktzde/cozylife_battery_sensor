@@ -150,10 +150,13 @@ class WakeSchedule:
         last = self._last_wake
         if period is None or last is None:
             return None
-        elapsed = now - last
-        cycles = max(1, math.floor((elapsed - self.tail) / period) + 1)
-        expected = last + cycles * period
+        # The cycle is chosen with the configured tail on purpose: a window
+        # that ended as missed (possibly widened) must not be chosen again.
+        cycles = max(1, math.floor((now - last - self.tail) / period) + 1)
+        return self._window(last, period, cycles)
 
+    def _window(self, last: float, period: float, cycles: int) -> WakeWindow:
+        expected = last + cycles * period
         lead, tail = self.lead, self.tail
         widened = self._widen_next
         if widened:
@@ -182,9 +185,10 @@ class WakeSchedule:
         self.reset()
         if not isinstance(data, dict):
             return
+        stored = data.get("intervals")
         intervals = [
             float(value)
-            for value in data.get("intervals") or []
+            for value in (stored if isinstance(stored, list) else [])
             if _is_number(value) and MIN_PERIOD_SECONDS <= value <= MAX_PERIOD_SECONDS
         ][-PERIOD_SAMPLES:]
         period = data.get("period")
@@ -193,8 +197,12 @@ class WakeSchedule:
         ):
             intervals = [float(period)]
         last = data.get("last")
+        if not intervals or not _is_number(last):
+            # A lone wake-up from before a restart is no baseline: the gap to
+            # the next one may span several wake-ups.
+            return
         self._intervals = intervals
-        self._last_wake = float(last) if _is_number(last) else None
+        self._last_wake = float(last)
         # Older saved states were measured while probing continuously.
         self._last_exact = bool(data.get("last_exact", True))
         missed = data.get("missed", 0)

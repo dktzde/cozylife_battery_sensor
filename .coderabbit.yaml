@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit settings: reviews only the integration code, with few and relevant comments.
+# Free for public repositories. Docs: https://docs.coderabbit.ai/reference/configuration
+language: en-US
+
+reviews:
+  # quiet = only important findings, chill = balanced, assertive = many (nitpicky)
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  poem: false
+  in_progress_fortune: false
+  # no "review skipped" or "review in progress" status comments on PRs
+  review_status: false
+
+  # Automatic reviews off: CodeRabbit does not review public repositories with fewer than 10 stars on its own.
+  # Start a review by hand with the PR comment `@coderabbitai review`. The keys below apply once this is true again.
+  auto_review:
+    enabled: false
+    drafts: false
+    # documentation-only PRs need no automatic review
+    ignore_title_keywords:
+      - "docs:"
+      - "docs("
+    ignore_usernames:
+      - "dependabot[bot]"
+
+  # Only the code: no Markdown or images
+  path_filters:
+    - "!**/*.md"
+    - "!**/*.png"
+    - "!**/*.jpeg"
+
+  path_instructions:
+    - path: "custom_components/cozylife_local/**/*.py"
+      instructions: >-
+        Home Assistant custom integration (domain cozylife_local) for one kind of device only: a battery-powered
+        CozyLife Wi-Fi temperature and humidity sensor that sleeps and wakes up about once an hour for a few seconds.
+        Home Assistant must catch it over local TCP (port 5555) while it is awake. The integration deliberately has no
+        UDP discovery or broadcast and probes only inside a short window around the learned wake-up time, to keep
+        Wi-Fi traffic low. Check for blocking I/O in the event loop, tasks or sockets that are not closed on unload,
+        races between the probe loop and the socket reader, wrong time arithmetic in the wake schedule (missed
+        wake-ups, windows that never end, drift), and values persisted in a way that breaks after a restart.
+        Entity unique IDs must stay `<device_id>_temperature`, `_humidity`, `_battery` and `_ip_address` so existing
+        installations keep their entity IDs and history. No IP addresses, device IDs or measurement values in logs
+        above debug level. Follow current Home Assistant integration conventions (config entries, options flow,
+        DataUpdateCoordinator, translations).
+    - path: "custom_components/cozylife_local/translations/*.json"
+      instructions: "Keys must match strings.json."
+    - path: "tests/**/*.py"
+      instructions: >-
+        Tests run with plain pytest and must not need Home Assistant installed; Home Assistant modules are stubbed.
+        Keep tests independent of each other and of wall-clock time.
+    - path: ".github/workflows/*.y*ml"
+      instructions: >-
+        Workflows must not push to branches. The upstream watch workflow may only open or update issues in this
+        repository and must stay idempotent (no duplicate issues for the same upstream change).
+
+chat:
+  auto_reply: true

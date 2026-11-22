@@ -2,7 +2,7 @@
 
 Read this first, and update it after every step, so the next session can continue without the chat history.
 
-Last updated: 2026-11-22 (rebuild around the battery sensor, 0.1.0)
+Last updated: 2026-11-22 (device test, default wake window 7 s / 30 s, 0.1.1)
 
 ## Current state
 
@@ -10,19 +10,28 @@ Last updated: 2026-11-22 (rebuild around the battery sensor, 0.1.0)
   humidity sensor (PR #2): TCP client, learned wake window, no UDP, reconfigure for the IP, removal of empty devices.
 - Upstream watch baseline: `f733d29` (upstream 1.1.9-1, reviewed 2026-11-22: only the battery range check concerned
   the sensor and is covered).
-- Not on the device yet.
+- **0.1.0 on the device since 2026-11-22 03:48** (installed through the Home Assistant Marketplace after removing the
+  upstream's entries; the sensor was re-added with its old device ID, entity IDs, registry IDs and history kept).
+  **Checked 2026-11-22 03:49–10:55:** all 8 wake-ups caught (2 while learning, 2 windows with 20 s lead, 4 with 7 s lead);
+  with 7 s lead probing started 7.0 / 7.7 / 7.0 / 7.4 s before the sensor answered; about 30 connection attempts per hour
+  (upstream: about 14,000); learned period 3523.9 s; values arrive hourly; no warnings or errors; the learned schedule
+  survived an options reload.
+- 0.1.1: defaults 7 s lead / 30 s tail. Not checked yet on the device as a release (the options already used these values).
 
 ## Next steps
 
-1. Release `v0.1.0`, install it on the maintainer's Home Assistant (replacing the upstream HACS repository), check the
-   entities keep their IDs and history.
-2. Watch six hours of wake-ups and tighten the default lead so probing starts 5–10 s before the wake-up (0.1.1).
+1. Install 0.1.1 on the device and check that windows keep hitting after the restart.
+2. Watch for misses over a few days (Wi-Fi outages of the Home Assistant host are expected to cause single misses).
 
 ## Known issues and backlog
 
 - Only `Z4tRml` is tested. The other catalogue sensors can be selected but may need different framing.
 - Extra wake-ups (for example triggered by large changes, DPIDs 24/25) are only seen while searching continuously;
   if they disturb learning, three missed windows reset the schedule.
+- The learned schedule is stored per config entry: re-adding the sensor starts learning again (up to two report periods of
+  continuous probing).
+- Marketplace (Home Assistant 2026.11) only uninstalls the upstream after its entries are removed; the README explains the
+  switch with the optional device ID.
 
 ## Decisions and conventions
 

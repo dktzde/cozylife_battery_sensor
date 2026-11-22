@@ -18,7 +18,7 @@ On my network that is a lot of traffic for one sensor. So this fork:
 - **keeps only the sensor**: temperature, humidity, battery and its IP address – no lights, switches, plugs, fans,
   speakers, no 1 MB model catalogue;
 - **learns when the sensor wakes up** and only asks shortly before the expected wake-up (a *wake window*, by default
-  from 20 s before to 60 s after it). After a missed window the next one is wider; after three misses in a row it
+  from 7 s before to 30 s after it; the first report ends the window). After a missed window the next one is wider; after three misses in a row it
   searches continuously again, as the original does. The learned rhythm survives restarts;
 - **sends no UDP broadcasts at all** – give the sensor a fixed IP address in your router;
 - keeps the domain `cozylife_local` and the entity unique IDs, so switching from the original keeps your entity IDs
@@ -54,8 +54,8 @@ like the original). Leftover devices without entities can be deleted.
 | Option | Default | Meaning |
 |---|---|---|
 | Probe only around the learned wake-up | on | Off = ask four times per second all the time, like the original. |
-| Start probing before the expected wake-up | 20 s | Smaller = less traffic, but a higher risk of missing the sensor. |
-| Stop probing after the expected wake-up | 60 s | How long to keep asking when the sensor is late. |
+| Start probing before the expected wake-up | 7 s | Smaller = less traffic, but a higher risk of missing the sensor. A missed or too tight window makes the next one start at least 20 s early. |
+| Stop probing after the expected wake-up | 30 s | How long to keep asking when the sensor is late (at least 60 s after a miss). |
 | Filter outliers | off | Optional median filter against false readings (from the original). |
 | Debug logging | off | Logs every probe and the timing of each caught wake-up (no IP addresses or values). |
 

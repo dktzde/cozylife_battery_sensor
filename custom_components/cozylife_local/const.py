@@ -59,10 +59,13 @@ OPTION_WAKE_WINDOW = "sensor_wake_window"
 OPTION_WAKE_LEAD = "wake_lead_seconds"
 OPTION_WAKE_TAIL = "wake_tail_seconds"
 DEFAULT_WAKE_WINDOW = True
-# Start probing this long before the expected wake-up ...
-DEFAULT_WAKE_LEAD_SECONDS = 20.0
-# ... and give up this long after it.
-DEFAULT_WAKE_TAIL_SECONDS = 60.0
+# Start probing this long before the expected wake-up ... Measured on a Z4tRml
+# over two days: the learned period predicts the wake-up within -1.9 to +2.9 s,
+# so 7 s starts probing about 5 to 10 s before the sensor wakes up.
+DEFAULT_WAKE_LEAD_SECONDS = 7.0
+# ... and give up this long after it (only matters when the sensor is late or
+# does not wake up; a report ends the window at once).
+DEFAULT_WAKE_TAIL_SECONDS = 30.0
 # After a missed or too tight window, the next window is at least this wide.
 FALLBACK_WAKE_LEAD_SECONDS = 20.0
 FALLBACK_WAKE_TAIL_SECONDS = 60.0

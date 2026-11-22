@@ -74,4 +74,6 @@ Useful fixes are ported by hand.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The original integration is © soulripper13.
+MIT, see [LICENSE](LICENSE). The original integration is © soulripper13, this fork © dktzde.
+
+If you find this project useful, consider starring the repository!

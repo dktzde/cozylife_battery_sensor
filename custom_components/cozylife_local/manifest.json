@@ -1,9 +1,6 @@
 {
   "domain": "cozylife_local",
   "name": "CozyLife Local",
-  "after_dependencies": [
-    "network"
-  ],
   "codeowners": [
     "@soulripper13"
   ],

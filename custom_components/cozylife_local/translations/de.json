@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CozyLife-Batteriefühler",
+        "description": "Gib die feste IP-Adresse des Fühlers ein (im Router reservieren). Der Fühler schläft meistens; antwortet er gerade nicht, wird er trotzdem angelegt und meldet sich beim nächsten Aufwachen.",
+        "data": {
+          "ip_address": "IP-Adresse",
+          "pid": "Modell (Produkt-ID)"
+        }
+      }
+    },
+    "error": {
+      "invalid_ip": "Gib eine gültige IPv4-Adresse ein.",
+      "wrong_model": "Der Fühler unter dieser Adresse meldet ein anderes Modell."
+    },
+    "abort": {
+      "already_configured": "Dieser Fühler ist schon eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Einstellungen des Fühlers",
+        "description": "Der Fühler wacht etwa einmal je Meldeintervall für wenige Sekunden auf. Mit dem Aufwachfenster lernt Home Assistant diesen Takt und fragt nur kurz vor dem erwarteten Aufwachen an.",
+        "data": {
+          "sensor_wake_window": "Nur um das gelernte Aufwachen herum anfragen",
+          "wake_lead_seconds": "Anfragen beginnen vor dem erwarteten Aufwachen",
+          "wake_tail_seconds": "Anfragen enden nach dem erwarteten Aufwachen",
+          "filter_outliers": "Ausreißer bei Temperatur und Feuchte filtern",
+          "temperature_radius": "Ausreißer-Grenze Temperatur (°C)",
+          "humidity_radius": "Ausreißer-Grenze Feuchte (Prozentpunkte)",
+          "enable_debug": "Debug-Protokoll einschalten"
+        },
+        "data_description": {
+          "sensor_wake_window": "Aus: ständig viermal pro Sekunde anfragen, wie die Original-Integration. Bis zwei Aufwach-Zeitpunkte gesehen wurden, fragt die Integration immer ständig an.",
+          "wake_lead_seconds": "Kleinere Werte bedeuten weniger WLAN-Verkehr, aber ein höheres Risiko, den Fühler zu verpassen. Nach einem verpassten oder zu knappen Fenster nutzt das nächste Fenster automatisch mindestens 20 s.",
+          "wake_tail_seconds": "Nach einem verpassten oder zu knappen Fenster nutzt das nächste Fenster automatisch mindestens 60 s. Nach drei verpassten Fenstern in Folge sucht die Integration wieder ständig.",
+          "filter_outliers": "Optionaler Median-Filter über vier Messungen gegen Fehlwerte wie plötzliche Nullen.",
+          "enable_debug": "Protokolliert jede Anfrage, jede Verbindung und den Zeitpunkt jedes erwischten Aufwachens. Ohne IP-Adressen und Messwerte."
+        }
+      }
+    }
+  }
+}

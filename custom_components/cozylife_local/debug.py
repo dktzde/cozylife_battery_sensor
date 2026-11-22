@@ -1,4 +1,4 @@
-"""Safe-to-share summaries for CozyLife local diagnostics."""
+"""Safe-to-share summaries for debug logs (no identity, no values)."""
 
 from __future__ import annotations
 
@@ -7,11 +7,13 @@ from typing import Any
 
 
 def summarize_frame(raw_frame: bytes) -> dict[str, Any]:
-    """Return protocol shape without local identity or values."""
+    """Return the protocol shape of a frame without local identity or values."""
     try:
         frame = json.loads(raw_frame.decode("utf8").strip())
     except (json.JSONDecodeError, UnicodeDecodeError):
         return {"invalid_frame_bytes": len(raw_frame)}
+    if not isinstance(frame, dict):
+        return {"non_object_frame": type(frame).__name__}
 
     summary: dict[str, Any] = {key: frame[key] for key in ("cmd", "res") if key in frame}
     message = frame.get("msg")

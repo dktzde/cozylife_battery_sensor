@@ -17,7 +17,7 @@ These rules apply to every session, also to Claude Code on the web.
 - **Merge** only when the maintainer explicitly asks, always with a merge commit (no squash), so every commit can be reverted on its own.
 - **Versions:** bump only for user-facing changes and only on `main`; documentation-only changes get no new version. Change the version in `manifest.json` and `CHANGELOG.md` at the same time, then tag `vX.Y.Z` and publish a GitHub release (HACS installs from releases).
 - **Changelog:** every version gets its date as `<sub>YYYY-MM-DD</sub>` under its heading. Versions by earlier authors are separated by a `---` line and a bold sentence naming them.
-- **Language:** everything in the repository is English (code, comments, docs, commits, PR and issue texts). Commit messages in the imperative, e.g. `feat(scope): …`, `fix: …`, `docs: …`, `chore: …`, `ci: …`.
+- **Language:** everything in the repository is English (code, comments, docs, commits, PR and issue texts). Exception: the UI translations under `custom_components/cozylife_local/translations/` (for example `de.json`) are localized on purpose; keep their keys equal to `strings.json`. Commit messages in the imperative, e.g. `feat(scope): …`, `fix: …`, `docs: …`, `chore: …`, `ci: …`.
 - **No secrets or private data** (tokens, passwords, IP addresses, device IDs, entity IDs) in the repository; use placeholders.
 - **README:** a credit line for Claude Code only after asking the maintainer.
 - **Handover:** keep `STATUS.md` with the current state, next steps, known issues, decisions and key files. Record what runs on the device with date and time, what was checked and what not. Update it after every step.

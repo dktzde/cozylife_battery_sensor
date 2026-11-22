@@ -1,5 +1,5 @@
 {
-  "name": "CozyLife Local",
-  "content_in_root": false,
-  "filename": "cozylife_local.zip"
+  "name": "CozyLife Battery Sensor",
+  "homeassistant": "2025.1.0",
+  "render_readme": true
 }

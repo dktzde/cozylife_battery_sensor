@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+<sub>2026-11-22</sub>
+
+- The wake window now starts 7 s before the expected wake-up and ends 30 s after it by default (was 20 s / 60 s).
+  On the device every wake-up was caught with probing starting about 7 s early and about 30 connection attempts per
+  hour. After a missed or too tight window the next one still uses at least 20 s / 60 s. Entries with own values keep
+  them.
+
 ## 0.1.0
 <sub>2026-11-22</sub>
 

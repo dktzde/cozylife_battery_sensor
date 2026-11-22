@@ -1,231 +1,267 @@
-import logging
+"""Config flow: add the sensor by its IP address, tune it in the options."""
+
+from __future__ import annotations
+
 import ipaddress
-from typing import Any, Dict, Optional
+import re
+from typing import Any
 
 import voluptuous as vol
 
-from homeassistant import config_entries
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
-    DISCOVERY_CONTROLLER_ENTRY_TYPE,
+    CONF_DEVICE_ID,
+    CONF_DEVICE_TYPE_CODE,
+    CONF_DPIDS,
+    CONF_IP_ADDRESS,
+    CONF_PID,
+    CONF_VERIFY_IDENTITY,
+    DEFAULT_HUMIDITY_RADIUS,
+    DEFAULT_PID,
+    DEFAULT_TEMPERATURE_RADIUS,
+    DEFAULT_WAKE_LEAD_SECONDS,
+    DEFAULT_WAKE_TAIL_SECONDS,
+    DEFAULT_WAKE_WINDOW,
     DOMAIN,
-    DEFAULT_MAX_KELVIN,
-    DEFAULT_MIN_KELVIN,
-    LIGHT_KELVIN_RANGES,
+    OPTION_ENABLE_DEBUG,
+    OPTION_FILTER_OUTLIERS,
+    OPTION_HUMIDITY_RADIUS,
+    OPTION_TEMPERATURE_RADIUS,
+    OPTION_WAKE_LEAD,
+    OPTION_WAKE_TAIL,
+    OPTION_WAKE_WINDOW,
+    PLACEHOLDER_DEVICE_ID_PREFIX,
+    SENSOR_BATTERY,
+    SENSOR_HUMIDITY,
+    SENSOR_MODELS,
+    SENSOR_TEMPERATURE,
+    SENSOR_TYPE_CODE,
 )
-from .discovery import (
-    async_load_model_catalog,
-    classify_device,
-    get_model_info,
-    supports_local_entities,
-)
+from .cozylife_api import CozyLifeSensorClient
 
-_LOGGER = logging.getLogger(__name__)
+# How long the config flow waits for an awake sensor to answer.
+IDENTITY_PROBE_SECONDS = 2.0
+# CozyLife device IDs are short alphanumeric strings.
+_DEVICE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
-def _kelvin_range_for_pid(pid: str | None) -> tuple[int, int]:
-    """Return the default Kelvin range for a light model."""
-    return LIGHT_KELVIN_RANGES.get(
-        pid or "",
-        (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN),
+
+def _valid_ipv4(value: str) -> bool:
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        return False
+    return True
+
+
+async def _async_read_identity(ip_address: str, pid: str) -> dict[str, Any] | None:
+    """Ask the sensor for its identity; None while it sleeps."""
+    client = CozyLifeSensorClient(ip_address, pid)
+    try:
+        return await client.async_read_identity(IDENTITY_PROBE_SECONDS)
+    finally:
+        await client.async_close()
+
+
+def _model_selector() -> SelectSelector:
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(
+                    value=pid,
+                    label=f"{pid}{' (tested)' if pid == DEFAULT_PID else ''}",
+                )
+                for pid in SENSOR_MODELS
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
     )
 
 
-class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for CozyLife integration."""
+class CozyLifeConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Add one sensor by its (fixed) IP address."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Create the one persistent, no-fields discovery controller entry."""
-        if user_input is None:
-            return self.async_show_form(step_id="user", data_schema=vol.Schema({}))
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the IP address and the model.
 
-        await self.async_set_unique_id(f"{DOMAIN}_discovery_controller")
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title="CozyLife Local",
-            data={"entry_type": DISCOVERY_CONTROLLER_ENTRY_TYPE},
-        )
-
-    async def async_step_import(self, import_data: Dict[str, Any]) -> FlowResult:
-        """Create the controller automatically when upgrading legacy entries."""
-        if import_data.get("entry_type") != DISCOVERY_CONTROLLER_ENTRY_TYPE:
-            return self.async_abort(reason="invalid_import")
-
-        await self.async_set_unique_id(f"{DOMAIN}_discovery_controller")
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title="CozyLife Local",
-            data={"entry_type": DISCOVERY_CONTROLLER_ENTRY_TYPE},
-        )
-
-    async def async_step_integration_discovery(
-        self,
-        discovery_info: Dict[str, Any],
-    ) -> FlowResult:
-        """Present an APK-announced Wi-Fi device for normal HA confirmation."""
-        device_id = discovery_info.get("device_id")
-        ip_address = discovery_info.get("ip_address")
-        if not isinstance(device_id, str) or not isinstance(ip_address, str):
-            return self.async_abort(reason="invalid_discovery")
-
-        try:
-            ipaddress.IPv4Address(ip_address)
-        except ipaddress.AddressValueError:
-            return self.async_abort(reason="invalid_discovery")
-
-        await self.async_set_unique_id(device_id)
-        self._abort_if_unique_id_configured()
-        # Keep the UDP identity on this config-flow instance.  A sleeping
-        # sensor may return to sleep before the user presses Add, so the
-        # confirmation step must not depend on a second TCP handshake.
-        self._udp_discovery_info = dict(discovery_info)
-        return await self.async_step_confirm_discovery()
-
-    async def _async_create_discovered_entry(
-        self,
-        discovery_info: Dict[str, Any],
-    ) -> FlowResult:
-        """Create a confirmed entry from its saved UDP announcement."""
-        ip_address = discovery_info["ip_address"]
-        device_id = discovery_info["device_id"]
-
-        # The APK treats an announced DID/IP pair as the local identity. It
-        # associates that identity with its catalogue profile, then refreshes
-        # it asynchronously with cmd 2 / attr:[1]; it does not make a cmd 0
-        # inventory reply a prerequisite to adding the device. Mirror that for
-        # known Wi-Fi models for which this integration implements entities.
-        pid = discovery_info.get("pid")
-        if isinstance(pid, str) and pid:
-            await async_load_model_catalog(self.hass)
-            model = get_model_info(pid)
-            device_type_code = discovery_info.get("device_type_code")
-            if model is not None:
-                classification = classify_device(
-                    pid,
-                    device_type_code or model.type_code,
-                    model.dpids,
-                )
-                if classification.is_local_transport and supports_local_entities(
-                    pid, classification
-                ):
-                    min_kelvin, max_kelvin = (
-                        _kelvin_range_for_pid(pid)
-                        if classification.is_light
-                        else (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN)
-                    )
+        Optionally, the device ID of a sensor that was configured before can be
+        entered, so its entities, device and history come back even
+        while the sensor sleeps (for example after switching from the original
+        integration, which requires removing its entry).
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            ip_address = user_input[CONF_IP_ADDRESS].strip()
+            pid = user_input[CONF_PID]
+            known_id = (user_input.get(CONF_DEVICE_ID) or "").strip()
+            if not _valid_ipv4(ip_address):
+                errors[CONF_IP_ADDRESS] = "invalid_ip"
+            elif known_id and not _DEVICE_ID_PATTERN.match(known_id):
+                errors[CONF_DEVICE_ID] = "invalid_device_id"
+            else:
+                self._async_abort_entries_match({CONF_IP_ADDRESS: ip_address})
+                identity = await _async_read_identity(ip_address, pid)
+                if identity is not None and identity["pid"] != pid:
+                    errors[CONF_PID] = "wrong_model"
+                elif identity is not None and known_id and identity["did"] != known_id:
+                    errors[CONF_DEVICE_ID] = "device_id_mismatch"
+                else:
+                    if identity is not None:
+                        device_id = identity["did"]
+                    elif known_id:
+                        device_id = known_id
+                    else:
+                        device_id = f"{PLACEHOLDER_DEVICE_ID_PREFIX}{ip_address}"
+                    await self.async_set_unique_id(device_id)
+                    self._abort_if_unique_id_configured()
                     return self.async_create_entry(
-                        title=model.model_name or "CozyLife device",
+                        title=f"CozyLife sensor {ip_address}",
                         data={
-                            "ip_address": ip_address,
-                            "device_id": device_id,
-                            "pid": pid,
-                            "device_type_code": (
-                                device_type_code or model.type_code
+                            CONF_IP_ADDRESS: ip_address,
+                            CONF_DEVICE_ID: device_id,
+                            CONF_PID: pid,
+                            CONF_DEVICE_TYPE_CODE: (
+                                identity["dtp"] if identity else SENSOR_TYPE_CODE
                             ),
-                            "dpids": sorted(model.dpids),
-                            "min_kelvin": min_kelvin,
-                            "max_kelvin": max_kelvin,
-                            "announced_via_udp": True,
+                            CONF_DPIDS: [
+                                SENSOR_HUMIDITY,
+                                SENSOR_TEMPERATURE,
+                                SENSOR_BATTERY,
+                            ],
                         },
                     )
 
-        return self.async_abort(reason="unsupported_announced_model")
-
-    async def async_step_confirm_discovery(
-        self,
-        user_input: Optional[Dict[str, Any]] = None,
-    ) -> FlowResult:
-        """Let Home Assistant's standard discovery card confirm a device."""
-        discovery_info = getattr(self, "_udp_discovery_info", None)
-        if not isinstance(discovery_info, dict):
-            return self.async_abort(reason="invalid_discovery")
-
-        if user_input is not None:
-            return await self._async_create_discovered_entry(discovery_info)
-
-        await async_load_model_catalog(self.hass)
-        model = get_model_info(discovery_info.get("pid"))
-        device_name = (
-            model.model_name
-            if model is not None and model.model_name
-            else "CozyLife device"
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_IP_ADDRESS): str,
+                vol.Required(CONF_PID, default=DEFAULT_PID): _model_selector(),
+                vol.Optional(CONF_DEVICE_ID): str,
+            }
         )
         return self.async_show_form(
-            step_id="confirm_discovery",
-            description_placeholders={
-                "device": device_name,
-                "ip_address": discovery_info["ip_address"],
-            },
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the IP address of the sensor."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            ip_address = user_input[CONF_IP_ADDRESS].strip()
+            if not _valid_ipv4(ip_address):
+                errors[CONF_IP_ADDRESS] = "invalid_ip"
+            elif any(
+                other.data.get(CONF_IP_ADDRESS) == ip_address
+                for other in self._async_current_entries(include_ignore=False)
+                if other.entry_id != entry.entry_id
+            ):
+                errors[CONF_IP_ADDRESS] = "ip_in_use"
+            else:
+                data = {**entry.data, CONF_IP_ADDRESS: ip_address}
+                if ip_address != entry.data.get(CONF_IP_ADDRESS):
+                    # Publish measurements only after the sensor at the new
+                    # address proved to be this device.
+                    data[CONF_VERIFY_IDENTITY] = True
+                # The entry's update listener reloads it.
+                self.hass.config_entries.async_update_entry(entry, data=data)
+                return self.async_abort(reason="reconfigure_successful")
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_IP_ADDRESS, default=entry.data.get(CONF_IP_ADDRESS, "")
+                    ): str
+                }
+            ),
+            errors=errors,
         )
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
-        """Get the options flow for this handler."""
-        return CozyLifeOptionsFlow(config_entry)
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the options flow."""
+        return CozyLifeOptionsFlow()
 
-class CozyLifeOptionsFlow(config_entries.OptionsFlow):
-    """Handle CozyLife options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry):
-        """Initialize CozyLife options flow."""
-        self._config_entry = config_entry
+def _seconds_selector(minimum: float, maximum: float) -> NumberSelector:
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=minimum,
+            max=maximum,
+            step=0.5,
+            unit_of_measurement="s",
+            mode=NumberSelectorMode.BOX,
+        )
+    )
 
-    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Manage the options."""
+
+class CozyLifeOptionsFlow(OptionsFlow):
+    """Wake window, outlier filter and debug logging."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show and save the options."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(data=user_input)
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=self._options_schema(),
-        )
-
-    def _options_schema(self) -> vol.Schema:
-        """Return the options schema for this config entry."""
-        dpids = self._config_entry.data.get("dpids") or []
-        pid = self._config_entry.data.get("pid", "")
-        classification = classify_device(
-            pid,
-            self._config_entry.data.get("device_type_code"),
-            dpids,
-        )
-        is_light = classification.is_light
-
-        schema_fields: Dict[Any, Any] = {}
-        if classification.is_environment_sensor:
-            options = self._config_entry.options
-            schema_fields[vol.Optional("filter_outliers", default=options.get("filter_outliers", False))] = bool
-            schema_fields[vol.Optional("temperature_radius", default=options.get("temperature_radius", 2.0))] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=120))
-            schema_fields[vol.Optional("humidity_radius", default=options.get("humidity_radius", 10.0))] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100))
-        if is_light:
-            model_min_kelvin, model_max_kelvin = _kelvin_range_for_pid(pid)
-            stored_min_kelvin = self._config_entry.data.get("min_kelvin", DEFAULT_MIN_KELVIN)
-            stored_max_kelvin = self._config_entry.data.get("max_kelvin", DEFAULT_MAX_KELVIN)
-            schema_fields[
+        options = self.config_entry.options
+        schema = vol.Schema(
+            {
                 vol.Optional(
-                    "min_kelvin",
-                    default=(
-                        model_min_kelvin
-                        if stored_min_kelvin == DEFAULT_MIN_KELVIN
-                        else stored_min_kelvin
-                    ),
-                )
-            ] = vol.All(int, vol.Range(min=1000, max=10000))
-            schema_fields[
+                    OPTION_WAKE_WINDOW,
+                    default=options.get(OPTION_WAKE_WINDOW, DEFAULT_WAKE_WINDOW),
+                ): bool,
                 vol.Optional(
-                    "max_kelvin",
-                    default=(
-                        model_max_kelvin
-                        if stored_max_kelvin == DEFAULT_MAX_KELVIN
-                        else stored_max_kelvin
+                    OPTION_WAKE_LEAD,
+                    default=options.get(OPTION_WAKE_LEAD, DEFAULT_WAKE_LEAD_SECONDS),
+                ): _seconds_selector(1, 600),
+                vol.Optional(
+                    OPTION_WAKE_TAIL,
+                    default=options.get(OPTION_WAKE_TAIL, DEFAULT_WAKE_TAIL_SECONDS),
+                ): _seconds_selector(5, 600),
+                vol.Optional(
+                    OPTION_FILTER_OUTLIERS,
+                    default=options.get(OPTION_FILTER_OUTLIERS, False),
+                ): bool,
+                vol.Optional(
+                    OPTION_TEMPERATURE_RADIUS,
+                    default=options.get(
+                        OPTION_TEMPERATURE_RADIUS, DEFAULT_TEMPERATURE_RADIUS
                     ),
-                )
-            ] = vol.All(int, vol.Range(min=1000, max=10000))
-        schema_fields[vol.Optional("enable_debug", default=self._config_entry.options.get("enable_debug", False))] = bool
-
-        return vol.Schema(schema_fields)
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=120)),
+                vol.Optional(
+                    OPTION_HUMIDITY_RADIUS,
+                    default=options.get(OPTION_HUMIDITY_RADIUS, DEFAULT_HUMIDITY_RADIUS),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100)),
+                vol.Optional(
+                    OPTION_ENABLE_DEBUG,
+                    default=options.get(OPTION_ENABLE_DEBUG, False),
+                ): bool,
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

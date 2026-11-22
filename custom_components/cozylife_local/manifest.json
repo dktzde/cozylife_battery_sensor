@@ -1,16 +1,14 @@
 {
   "domain": "cozylife_local",
-  "name": "CozyLife Local",
-  "after_dependencies": [
-    "network"
-  ],
+  "name": "CozyLife Battery Sensor",
   "codeowners": [
-    "@soulripper13"
+    "@dktzde"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/soulripper13/cozylife_local",
+  "documentation": "https://github.com/dktzde/cozylife_battery_sensor",
+  "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/soulripper13/cozylife_local/issues",
+  "issue_tracker": "https://github.com/dktzde/cozylife_battery_sensor/issues",
   "requirements": [],
-  "version": "1.1.8"
+  "version": "0.1.0"
 }

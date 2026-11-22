@@ -148,6 +148,31 @@ class CozyLifeConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the IP address of the sensor."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            ip_address = user_input[CONF_IP_ADDRESS].strip()
+            if _valid_ipv4(ip_address):
+                return self.async_update_reload_and_abort(
+                    entry, data_updates={CONF_IP_ADDRESS: ip_address}
+                )
+            errors[CONF_IP_ADDRESS] = "invalid_ip"
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_IP_ADDRESS, default=entry.data.get(CONF_IP_ADDRESS, "")
+                    ): str
+                }
+            ),
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:

@@ -8,6 +8,13 @@
           "ip_address": "IP address",
           "pid": "Model (product ID)"
         }
+      },
+      "reconfigure": {
+        "title": "Change the IP address",
+        "description": "This fork has no discovery. Enter the sensor's new fixed IP address.",
+        "data": {
+          "ip_address": "IP address"
+        }
       }
     },
     "error": {
@@ -15,7 +22,8 @@
       "wrong_model": "The sensor at this address reports a different model."
     },
     "abort": {
-      "already_configured": "This sensor is already configured."
+      "already_configured": "This sensor is already configured.",
+      "reconfigure_successful": "The IP address was changed."
     }
   },
   "options": {

@@ -8,6 +8,13 @@
           "ip_address": "IP-Adresse",
           "pid": "Modell (Produkt-ID)"
         }
+      },
+      "reconfigure": {
+        "title": "IP-Adresse ändern",
+        "description": "Dieser Fork hat keine Suche im Netz. Gib die neue feste IP-Adresse des Fühlers ein.",
+        "data": {
+          "ip_address": "IP-Adresse"
+        }
       }
     },
     "error": {
@@ -15,7 +22,8 @@
       "wrong_model": "Der Fühler unter dieser Adresse meldet ein anderes Modell."
     },
     "abort": {
-      "already_configured": "Dieser Fühler ist schon eingerichtet."
+      "already_configured": "Dieser Fühler ist schon eingerichtet.",
+      "reconfigure_successful": "Die IP-Adresse wurde geändert."
     }
   },
   "options": {

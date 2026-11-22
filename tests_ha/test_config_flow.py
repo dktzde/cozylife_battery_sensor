@@ -76,6 +76,24 @@ async def test_same_ip_is_rejected(hass: HomeAssistant) -> None:
     assert result["reason"] == "already_configured"
 
 
+async def test_reconfigure_changes_the_ip(
+    hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"ip_address": "192.0.2.24", "device_id": "abc", "pid": "Z4tRml"},
+    )
+    entry.add_to_hass(hass)
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"ip_address": "192.0.2.25"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data["ip_address"] == "192.0.2.25"
+
+
 async def test_options_flow(
     hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
 ) -> None:

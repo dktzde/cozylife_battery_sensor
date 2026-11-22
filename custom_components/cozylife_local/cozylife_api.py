@@ -138,6 +138,8 @@ class CozyLifeSensorClient:
                 await reader_task
             except asyncio.CancelledError:
                 pass
+            except Exception:  # noqa: BLE001 - the reader already ended this connection
+                _RAW_LOGGER.debug("CozyLife reader had failed", exc_info=True)
 
     def _encode(self, message: dict[str, Any]) -> bytes:
         encoded = json.dumps(message, separators=(",", ":")).encode("utf8")
@@ -260,7 +262,8 @@ class CozyLifeSensorClient:
                             await result
                     except Exception:  # noqa: BLE001 - keep the reader alive
                         _LOGGER.exception("Error handling a CozyLife frame")
-        except (OSError, TimeoutError) as err:
+        except (OSError, TimeoutError, ValueError) as err:
+            # ValueError: a line longer than the stream limit.
             _RAW_LOGGER.debug("CozyLife connection ended: %s", type(err).__name__)
         finally:
             if self._writer is writer:

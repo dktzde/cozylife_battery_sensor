@@ -15,20 +15,29 @@ def summarize_frame(raw_frame: bytes) -> dict[str, Any]:
     if not isinstance(frame, dict):
         return {"non_object_frame": type(frame).__name__}
 
-    summary: dict[str, Any] = {key: frame[key] for key in ("cmd", "res") if key in frame}
+    summary: dict[str, Any] = {
+        key: frame[key] for key in ("cmd", "res") if _is_int(frame.get(key))
+    }
     message = frame.get("msg")
     if isinstance(message, dict):
         message_summary: dict[str, Any] = {}
         attributes = message.get("attr")
         if isinstance(attributes, list):
-            message_summary["attr"] = attributes
+            message_summary["attr"] = [value for value in attributes if _is_int(value)]
         data = message.get("data")
         if isinstance(data, dict):
-            message_summary["data_dpids"] = sorted(str(dpid) for dpid in data)
+            message_summary["data_dpids"] = summarize_dpids(data)
         summary["msg"] = message_summary
     return summary
 
 
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def summarize_dpids(state_data: dict[str, Any]) -> list[str]:
-    """Return a state payload's DPID keys without its values."""
-    return sorted(str(dpid) for dpid in state_data)
+    """Return a state payload's numeric DPID keys without its values."""
+    return sorted(
+        (str(dpid) for dpid in state_data if str(dpid).isdigit() and len(str(dpid)) <= 4),
+        key=int,
+    )

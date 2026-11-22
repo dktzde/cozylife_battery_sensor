@@ -213,3 +213,30 @@ def test_invalid_frames_do_not_stop_the_reader() -> None:
             await server.wait_closed()
 
     asyncio.run(run())
+
+
+def test_oversized_line_ends_the_connection_quietly() -> None:
+    async def run() -> None:
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            await reader.read(100)
+            writer.write(b"x" * (2**16 + 10))
+            await writer.drain()
+            await asyncio.sleep(0.5)
+            writer.close()
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        client = CozyLifeSensorClient("127.0.0.1", "Z4tRml", port=port)
+        try:
+            assert await client.async_send_status()
+            for _ in range(50):
+                if not client.is_connected:
+                    break
+                await asyncio.sleep(0.02)
+            assert not client.is_connected
+            await client.async_close()  # must not raise
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(run())

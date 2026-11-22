@@ -27,14 +27,27 @@ On my network that is a lot of traffic for one sensor. So this fork:
 ## Installation
 
 1. Reserve a fixed IP address for the sensor in your router.
-2. If you use the original CozyLife Local: remove it in HACS (keep the integration entries in Home Assistant).
-3. HACS → three dots → *Custom repositories* → add `https://github.com/dktzde/cozylife_battery_sensor` as
-   *Integration*, then download *CozyLife Battery Sensor* and restart Home Assistant.
-4. New installation: *Settings → Devices & services → Add integration → CozyLife Battery Sensor*, enter the IP address.
-   The sensor may sleep; it is added anyway and identifies itself at its next wake-up.
+2. HACS (or the Home Assistant Marketplace) → *Custom repositories* → add
+   `https://github.com/dktzde/cozylife_battery_sensor` as *Integration*, install *CozyLife Battery Sensor* and restart
+   Home Assistant.
+3. *Settings → Devices & services → Add integration → CozyLife Battery Sensor*, enter the IP address. The sensor may
+   sleep; it is added anyway and identifies itself at its next wake-up.
 
-Coming from the original, the existing sensor entry keeps working; the empty "CozyLife Local" discovery entry of the
-original is removed automatically, and leftover devices without entities can be deleted.
+### Switching from the original CozyLife Local
+
+Both use the domain `cozylife_local`, and HACS/Marketplace only uninstall the original once its entries are gone.
+Home Assistant keeps removed entities and devices and restores them (entity IDs, names, area, history) when the same
+device is added again, so:
+
+1. Note the sensor's device ID: `device_id` of its entry in `.storage/core.config_entries` (it is also the part before
+   `_temperature` in the unique ID of its entities).
+2. Delete the original's entries (the sensor and the empty *CozyLife Local* discovery entry), uninstall the original,
+   install this fork as above and restart.
+3. With *Advanced mode* enabled in your user profile, add the integration with the IP address **and the device ID**.
+   The entities come back with their old entity IDs, even while the sensor sleeps.
+
+The wake-up rhythm is learned again within the first two wake-ups (until then the integration probes continuously,
+like the original). Leftover devices without entities can be deleted.
 
 ## Options
 

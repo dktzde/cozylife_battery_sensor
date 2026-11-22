@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -30,6 +31,7 @@ from .const import (
     CONF_DPIDS,
     CONF_IP_ADDRESS,
     CONF_PID,
+    CONF_VERIFY_IDENTITY,
     DEFAULT_HUMIDITY_RADIUS,
     DEFAULT_PID,
     DEFAULT_TEMPERATURE_RADIUS,
@@ -55,6 +57,8 @@ from .cozylife_api import CozyLifeSensorClient
 
 # How long the config flow waits for an awake sensor to answer.
 IDENTITY_PROBE_SECONDS = 2.0
+# CozyLife device IDs are short alphanumeric strings.
+_DEVICE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
 def _valid_ipv4(value: str) -> bool:
@@ -97,24 +101,36 @@ class CozyLifeConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for the IP address and the model."""
+        """Ask for the IP address and the model.
+
+        In advanced mode the device ID of a sensor that was configured before
+        can be entered, so its entities, device and history come back even
+        while the sensor sleeps (for example after switching from the original
+        integration, which requires removing its entry).
+        """
         errors: dict[str, str] = {}
         if user_input is not None:
             ip_address = user_input[CONF_IP_ADDRESS].strip()
             pid = user_input[CONF_PID]
+            known_id = (user_input.get(CONF_DEVICE_ID) or "").strip()
             if not _valid_ipv4(ip_address):
                 errors[CONF_IP_ADDRESS] = "invalid_ip"
+            elif known_id and not _DEVICE_ID_PATTERN.match(known_id):
+                errors[CONF_DEVICE_ID] = "invalid_device_id"
             else:
                 self._async_abort_entries_match({CONF_IP_ADDRESS: ip_address})
                 identity = await _async_read_identity(ip_address, pid)
                 if identity is not None and identity["pid"] != pid:
                     errors[CONF_PID] = "wrong_model"
+                elif identity is not None and known_id and identity["did"] != known_id:
+                    errors[CONF_DEVICE_ID] = "device_id_mismatch"
                 else:
-                    device_id = (
-                        identity["did"]
-                        if identity is not None
-                        else f"{PLACEHOLDER_DEVICE_ID_PREFIX}{ip_address}"
-                    )
+                    if identity is not None:
+                        device_id = identity["did"]
+                    elif known_id:
+                        device_id = known_id
+                    else:
+                        device_id = f"{PLACEHOLDER_DEVICE_ID_PREFIX}{ip_address}"
                     await self.async_set_unique_id(device_id)
                     self._abort_if_unique_id_configured()
                     return self.async_create_entry(
@@ -134,16 +150,16 @@ class CozyLifeConfigFlow(ConfigFlow, domain=DOMAIN):
                         },
                     )
 
+        fields: dict[Any, Any] = {
+            vol.Required(CONF_IP_ADDRESS): str,
+            vol.Required(CONF_PID, default=DEFAULT_PID): _model_selector(),
+        }
+        if self.show_advanced_options:
+            fields[vol.Optional(CONF_DEVICE_ID)] = str
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(
-                    {
-                        vol.Required(CONF_IP_ADDRESS): str,
-                        vol.Required(CONF_PID, default=DEFAULT_PID): _model_selector(),
-                    }
-                ),
-                user_input,
+                vol.Schema(fields), user_input
             ),
             errors=errors,
         )
@@ -156,11 +172,23 @@ class CozyLifeConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             ip_address = user_input[CONF_IP_ADDRESS].strip()
-            if _valid_ipv4(ip_address):
-                return self.async_update_reload_and_abort(
-                    entry, data_updates={CONF_IP_ADDRESS: ip_address}
-                )
-            errors[CONF_IP_ADDRESS] = "invalid_ip"
+            if not _valid_ipv4(ip_address):
+                errors[CONF_IP_ADDRESS] = "invalid_ip"
+            elif any(
+                other.data.get(CONF_IP_ADDRESS) == ip_address
+                for other in self._async_current_entries(include_ignore=False)
+                if other.entry_id != entry.entry_id
+            ):
+                errors[CONF_IP_ADDRESS] = "ip_in_use"
+            else:
+                data = {**entry.data, CONF_IP_ADDRESS: ip_address}
+                if ip_address != entry.data.get(CONF_IP_ADDRESS):
+                    # Publish measurements only after the sensor at the new
+                    # address proved to be this device.
+                    data[CONF_VERIFY_IDENTITY] = True
+                # The entry's update listener reloads it.
+                self.hass.config_entries.async_update_entry(entry, data=data)
+                return self.async_abort(reason="reconfigure_successful")
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema(

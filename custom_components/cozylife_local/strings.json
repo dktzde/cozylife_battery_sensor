@@ -6,12 +6,16 @@
         "description": "Enter the fixed IP address of the sensor (reserve it in your router). The sensor sleeps most of the time; if it does not answer now, it is added anyway and identifies itself at its next wake-up.",
         "data": {
           "ip_address": "IP address",
-          "pid": "Model (product ID)"
+          "pid": "Model (product ID)",
+          "device_id": "Device ID of a previously configured sensor (optional)"
+        },
+        "data_description": {
+          "device_id": "Only when you add a sensor again, for example after switching from the original integration: its old device ID (the part before `_temperature` in the unique ID of its entities) brings back its entities, device and history while the sensor sleeps."
         }
       },
       "reconfigure": {
         "title": "Change the IP address",
-        "description": "This fork has no discovery. Enter the sensor's new fixed IP address.",
+        "description": "This fork has no discovery. Enter the sensor's new fixed IP address. Measurements are used again once the sensor at the new address has confirmed its device ID.",
         "data": {
           "ip_address": "IP address"
         }
@@ -19,7 +23,10 @@
     },
     "error": {
       "invalid_ip": "Enter a valid IPv4 address.",
-      "wrong_model": "The sensor at this address reports a different model."
+      "wrong_model": "The sensor at this address reports a different model.",
+      "invalid_device_id": "Enter only letters, digits, `_`, `.` or `-`.",
+      "device_id_mismatch": "The sensor at this address reports a different device ID.",
+      "ip_in_use": "This IP address already belongs to another sensor."
     },
     "abort": {
       "already_configured": "This sensor is already configured.",
@@ -41,7 +48,7 @@
           "enable_debug": "Enable debug logging"
         },
         "data_description": {
-          "sensor_wake_window": "Off: probe four times per second all the time, like the original integration. Until two wake-ups have been seen, the integration always probes continuously.",
+          "sensor_wake_window": "Off: keep searching outside the windows, aiming at four probes per second (each attempt has to finish first) with a 30 s pause after each report, much like the original integration. Until two wake-ups have been seen, the integration always searches like this.",
           "wake_lead_seconds": "Smaller values mean less Wi-Fi traffic but a higher risk of missing the sensor. After a missed or too tight window the next window automatically uses at least 20 s.",
           "wake_tail_seconds": "After a missed or too tight window the next window automatically uses at least 60 s. After three missed windows in a row the integration searches continuously again.",
           "filter_outliers": "Optional four-sample median filter for false readings such as sudden zeros.",

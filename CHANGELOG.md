@@ -13,6 +13,8 @@ First release of this fork, built from CozyLife Local 1.1.8.
   the earlier wake-window add-on).
 - No UDP discovery and no broadcasts. The sensor is added by its fixed IP address; the IP can be changed with
   *Reconfigure*. The original's empty discovery entry is removed automatically.
+- In advanced mode the device ID of a previously configured sensor can be entered, so its entities, device and
+  history come back after switching from the original (whose entries must be removed before it can be uninstalled).
 - Devices without entities (for example left over from an identity change) can be deleted.
 - Diagnostics show the learned period, its jitter and the recent probe windows.
 - Workflows: hassfest, HACS validation, unit and Home Assistant tests, and a weekly check of the original for

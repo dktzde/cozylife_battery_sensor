@@ -6,12 +6,16 @@
         "description": "Gib die feste IP-Adresse des Fühlers ein (im Router reservieren). Der Fühler schläft meistens; antwortet er gerade nicht, wird er trotzdem angelegt und meldet sich beim nächsten Aufwachen.",
         "data": {
           "ip_address": "IP-Adresse",
-          "pid": "Modell (Produkt-ID)"
+          "pid": "Modell (Produkt-ID)",
+          "device_id": "Geräte-ID eines früher eingerichteten Fühlers (optional)"
+        },
+        "data_description": {
+          "device_id": "Nur beim erneuten Hinzufügen, z. B. nach dem Wechsel von der Original-Integration: Die alte Geräte-ID (der Teil vor `_temperature` in der Unique-ID seiner Entitäten) holt Entitäten, Gerät und Verlauf zurück, auch während der Fühler schläft."
         }
       },
       "reconfigure": {
         "title": "IP-Adresse ändern",
-        "description": "Dieser Fork hat keine Suche im Netz. Gib die neue feste IP-Adresse des Fühlers ein.",
+        "description": "Dieser Fork hat keine Suche im Netz. Gib die neue feste IP-Adresse des Fühlers ein. Messwerte werden erst übernommen, wenn der Fühler unter der neuen Adresse seine Geräte-ID bestätigt hat.",
         "data": {
           "ip_address": "IP-Adresse"
         }
@@ -19,7 +23,10 @@
     },
     "error": {
       "invalid_ip": "Gib eine gültige IPv4-Adresse ein.",
-      "wrong_model": "Der Fühler unter dieser Adresse meldet ein anderes Modell."
+      "wrong_model": "Der Fühler unter dieser Adresse meldet ein anderes Modell.",
+      "invalid_device_id": "Nur Buchstaben, Ziffern, `_`, `.` oder `-` eingeben.",
+      "device_id_mismatch": "Der Fühler unter dieser Adresse meldet eine andere Geräte-ID.",
+      "ip_in_use": "Diese IP-Adresse gehört schon zu einem anderen Fühler."
     },
     "abort": {
       "already_configured": "Dieser Fühler ist schon eingerichtet.",
@@ -41,7 +48,7 @@
           "enable_debug": "Debug-Protokoll einschalten"
         },
         "data_description": {
-          "sensor_wake_window": "Aus: ständig viermal pro Sekunde anfragen, wie die Original-Integration. Bis zwei Aufwach-Zeitpunkte gesehen wurden, fragt die Integration immer ständig an.",
+          "sensor_wake_window": "Aus: außerhalb der Fenster weitersuchen, Ziel viermal pro Sekunde (jeder Versuch muss erst fertig sein), mit 30 s Pause nach jeder Meldung – ähnlich der Original-Integration. Bis zwei Aufwach-Zeitpunkte gesehen wurden, sucht die Integration immer so.",
           "wake_lead_seconds": "Kleinere Werte bedeuten weniger WLAN-Verkehr, aber ein höheres Risiko, den Fühler zu verpassen. Nach einem verpassten oder zu knappen Fenster nutzt das nächste Fenster automatisch mindestens 20 s.",
           "wake_tail_seconds": "Nach einem verpassten oder zu knappen Fenster nutzt das nächste Fenster automatisch mindestens 60 s. Nach drei verpassten Fenstern in Folge sucht die Integration wieder ständig.",
           "filter_outliers": "Optionaler Median-Filter über vier Messungen gegen Fehlwerte wie plötzliche Nullen.",

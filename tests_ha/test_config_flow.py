@@ -84,14 +84,23 @@ async def test_reconfigure_changes_the_ip(
         data={"ip_address": "192.0.2.24", "device_id": "abc", "pid": "Z4tRml"},
     )
     entry.add_to_hass(hass)
+    MockConfigEntry(
+        domain=DOMAIN, data={"ip_address": "192.0.2.29", "device_id": "other"}
+    ).add_to_hass(hass)
     result = await entry.start_reconfigure_flow(hass)
     assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"ip_address": "192.0.2.29"}
+    )
+    assert result["errors"] == {"ip_address": "ip_in_use"}
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"ip_address": "192.0.2.25"}
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.data["ip_address"] == "192.0.2.25"
+    # measurements wait until the sensor at the new address proves its ID
+    assert entry.data["verify_identity"] is True
 
 
 async def test_options_flow(
@@ -123,3 +132,47 @@ async def test_options_flow(
     assert entry.options["wake_lead_seconds"] == 7.5
     coordinator = hass.data[DOMAIN][entry.entry_id]
     assert coordinator.schedule.lead == 7.5
+
+
+async def test_known_device_id_in_advanced_mode(
+    hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
+) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER, "show_advanced_options": True},
+    )
+    assert "device_id" in result["data_schema"].schema
+    with patch(READ_IDENTITY, AsyncMock(return_value=None)):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"ip_address": "192.0.2.27", "pid": "Z4tRml", "device_id": "bad id!"},
+        )
+        assert result["errors"] == {"device_id": "invalid_device_id"}
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"ip_address": "192.0.2.27", "pid": "Z4tRml", "device_id": "0123abcd"},
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["device_id"] == "0123abcd"
+    assert result["result"].unique_id == "0123abcd"
+
+
+async def test_known_device_id_must_match_an_awake_sensor(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER, "show_advanced_options": True},
+    )
+    identity = {"did": "feedface", "pid": "Z4tRml", "dtp": "02"}
+    with patch(READ_IDENTITY, AsyncMock(return_value=identity)):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"ip_address": "192.0.2.28", "pid": "Z4tRml", "device_id": "0123abcd"},
+        )
+    assert result["errors"] == {"device_id": "device_id_mismatch"}
+
+
+async def test_device_id_field_is_hidden_by_default(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert "device_id" not in result["data_schema"].schema

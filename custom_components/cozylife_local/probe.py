@@ -114,13 +114,18 @@ class WakeProber:
         self._connected_grace = connected_grace
         self._clock = clock
         self._report = asyncio.Event()
+        # Connection time of the report, taken when the report arrives: the
+        # connection may close before the probe loop resumes.
+        self._report_connected_at: float | None = None
         self.history: deque[ProbeResult] = deque(maxlen=HISTORY_LENGTH)
         self.current_window: WakeWindow | None = None
         self.state = "idle"
 
     def report_received(self) -> None:
         """Tell the prober that a valid report arrived."""
-        self._report.set()
+        if not self._report.is_set():
+            self._report_connected_at = self._transport.connected_at
+            self._report.set()
 
     async def async_run(self) -> None:
         """Probe forever; cancel the task to stop."""
@@ -129,15 +134,18 @@ class WakeProber:
 
     async def async_run_once(self) -> ProbeResult:
         """Wait for the next window (if any), probe it and learn from it."""
-        window = (
-            self.schedule.next_window(self._clock()) if self.wake_window else None
-        )
-        self.current_window = window
-        if window is not None:
-            delay = window.start - self._clock()
-            if delay > 0:
-                self.state = "waiting"
-                await asyncio.sleep(delay)
+        while True:
+            window = (
+                self.schedule.next_window(self._clock()) if self.wake_window else None
+            )
+            self.current_window = window
+            delay = 0.0 if window is None else window.start - self._clock()
+            if delay <= 0:
+                break
+            # Choose the window again after waiting: the wall clock may have
+            # been adjusted while asyncio slept on its monotonic clock.
+            self.state = "waiting"
+            await asyncio.sleep(delay)
         self.state = "probing" if window is not None else "searching"
         try:
             result = await self._async_probe(window)
@@ -182,9 +190,10 @@ class WakeProber:
         """Ask for the state until a report arrives or the window ends."""
         loop = asyncio.get_running_loop()
         self._report.clear()
+        self._report_connected_at = None
         started_at = self._clock()
+        first_attempt_done_at: float | None = None
         attempts = 0
-        connected_on_attempt: int | None = None
         while True:
             now = self._clock()
             if window is not None and now >= window.end and not (
@@ -194,22 +203,24 @@ class WakeProber:
                 return ProbeResult(now, None, False, None, attempts, window)
 
             attempt_started = loop.time()
-            was_connected = self._transport.is_connected
             await self._transport.async_send_status()
             attempts += 1
-            if not was_connected and self._transport.is_connected:
-                connected_on_attempt = attempts
+            if first_attempt_done_at is None:
+                first_attempt_done_at = self._clock()
             remaining = self._attempt_interval - (loop.time() - attempt_started)
             try:
                 await asyncio.wait_for(self._report.wait(), max(remaining, 0.01))
             except TimeoutError:
-                continue
+                # The report may have arrived while the wait was cancelled.
+                if not self._report.is_set():
+                    continue
 
             finished_at = self._clock()
-            wake_at = self._transport.connected_at or finished_at
-            # Connected on the very first attempt: the sensor was already
-            # awake, so the real wake-up was earlier than ``wake_at``.
-            exact = connected_on_attempt is not None and connected_on_attempt > 1
+            connected_at = self._report_connected_at
+            wake_at = connected_at if connected_at is not None else finished_at
+            # A connection opened during the very first attempt means the
+            # sensor was already awake: the real wake-up was earlier.
+            exact = connected_at is not None and connected_at >= first_attempt_done_at
             return ProbeResult(
                 finished_at, wake_at, exact, wake_at - started_at, attempts, window
             )

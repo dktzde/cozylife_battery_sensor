@@ -240,10 +240,24 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
         device_registry = dr.async_get(self.hass)
-        old_device = device_registry.async_get_device(identifiers={(DOMAIN, old_id)})
-        if old_device is not None and not device_registry.async_get_device(
-            identifiers={(DOMAIN, new_id)}
+        entry_id = self.config_entry.entry_id
+        old_device = _device_by_identifier(device_registry, (DOMAIN, old_id), entry_id)
+        if old_device is not None and not _device_by_identifier(
+            device_registry, (DOMAIN, new_id), entry_id
         ):
             device_registry.async_update_device(
                 old_device.id, new_identifiers={(DOMAIN, new_id)}
             )
+
+
+def _device_by_identifier(
+    registry: dr.DeviceRegistry, identifier: tuple[str, str], entry_id: str
+) -> dr.DeviceEntry | None:
+    """Look a device up by identifier within one config entry.
+
+    Home Assistant 2026.10 replaced ``async_get_device`` with a per-entry lookup;
+    keep older releases working.
+    """
+    if (getter := getattr(registry, "async_get_device_by_identifier", None)) is not None:
+        return getter(identifier, entry_id)
+    return registry.async_get_device(identifiers={identifier})

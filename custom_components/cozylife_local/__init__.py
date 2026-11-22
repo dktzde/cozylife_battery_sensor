@@ -93,7 +93,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply changed options."""
+    """Apply changed options, a new address or a verified device ID."""
+    coordinator: CozyLifeCoordinator | None = hass.data[DOMAIN].get(entry.entry_id)
+    if coordinator is not None and not coordinator.needs_reload():
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

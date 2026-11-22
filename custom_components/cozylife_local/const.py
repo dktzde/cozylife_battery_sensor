@@ -12,6 +12,9 @@ CONF_DEVICE_ID = "device_id"
 CONF_PID = "pid"
 CONF_DEVICE_TYPE_CODE = "device_type_code"
 CONF_DPIDS = "dpids"
+# Set when the IP address changed: hold measurements back until the sensor at
+# the new address proved its device ID.
+CONF_VERIFY_IDENTITY = "verify_identity"
 
 # Entries created by upstream releases with UDP discovery. This fork removes them.
 CONF_ENTRY_TYPE = "entry_type"

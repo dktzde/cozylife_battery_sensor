@@ -15,7 +15,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE_CODE,
+    CONF_IP_ADDRESS,
     CONF_PID,
+    CONF_VERIFY_IDENTITY,
     DEFAULT_HUMIDITY_RADIUS,
     DEFAULT_TEMPERATURE_RADIUS,
     DEFAULT_WAKE_LEAD_SECONDS,
@@ -117,7 +119,29 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass, STORAGE_VERSION, STORAGE_KEY.format(entry_id=entry.entry_id)
         )
         self._probe_task: asyncio.Task[None] | None = None
+        self._schedule_loaded = False
+        # Measurements held back until the sensor proved its device ID.
+        self._unverified_state: dict[str, Any] | None = None
+        # What this coordinator was built from; other entry updates need no reload.
+        self._built_from = (
+            dict(entry.options),
+            entry.data.get(CONF_IP_ADDRESS),
+            entry.data.get(CONF_DEVICE_ID),
+        )
         client.set_listener(self._async_handle_frame)
+
+    def needs_reload(self) -> bool:
+        """Return whether the entry changed in a way only a reload applies."""
+        entry = self.config_entry
+        return self._built_from != (
+            dict(entry.options),
+            entry.data.get(CONF_IP_ADDRESS),
+            entry.data.get(CONF_DEVICE_ID),
+        )
+
+    @property
+    def _identity_unverified(self) -> bool:
+        return bool(self.config_entry.data.get(CONF_VERIFY_IDENTITY))
 
     @property
     def device_id(self) -> str:
@@ -132,6 +156,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("Could not read the learned wake-up schedule; learning again")
             stored = None
         self.schedule.restore(stored)
+        self._schedule_loaded = True
         if self.schedule.locked:
             _LOGGER.debug(
                 "Restored wake-up schedule: period %.1f s", self.schedule.period
@@ -150,7 +175,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except asyncio.CancelledError:
                 pass
         await self.client.async_close()
-        await self._store.async_save(self.schedule.as_dict())
+        if self._schedule_loaded:
+            # Never overwrite a stored schedule that was not loaded.
+            await self._store.async_save(self.schedule.as_dict())
 
     @callback
     def _async_schedule_save(self) -> None:
@@ -179,33 +206,73 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # The sensor is awake and reported: the probe loop may stop, even if
         # the optional filter below rejects the values.
         self.prober.report_received()
+        if self._identity_unverified:
+            # After an address change: publish only once the sensor at the new
+            # address proved to be this device (see _async_after_report).
+            self._unverified_state = {**(self._unverified_state or {}), **received}
+            return
+        self._async_publish(frame.get("sn"), received)
+
+    @callback
+    def _async_publish(self, sn: Any, received: dict[str, Any]) -> None:
         if self._filter is not None:
-            received = self._filter.filter(frame.get("sn"), received, self._radii)
+            received = self._filter.filter(sn, received, self._radii)
         _LOGGER.debug("Received sensor report with DPIDs %s", summarize_dpids(received))
         # Reports can be partial; keep earlier values of missing DPIDs.
         self.async_set_updated_data({**(self.data or {}), **received})
 
     async def _async_after_report(self) -> None:
-        """Replace a placeholder device ID while the sensor is awake."""
+        """Check the sensor's identity while it is awake, when needed."""
         old_id = self.device_id
-        if not old_id.startswith(PLACEHOLDER_DEVICE_ID_PREFIX):
+        placeholder = old_id.startswith(PLACEHOLDER_DEVICE_ID_PREFIX)
+        if not placeholder and not self._identity_unverified:
             return
+        pending, self._unverified_state = self._unverified_state, None
         info = await self.client.async_read_identity(IDENTITY_TIMEOUT_SECONDS)
         if info is None:
+            _LOGGER.debug("Sensor did not tell its identity; trying at the next wake-up")
             return
         expected_pid = self.config_entry.data.get(CONF_PID)
         if expected_pid and info["pid"] != expected_pid:
             _LOGGER.warning(
                 "Sensor reports product ID %s instead of the configured %s; "
-                "keeping the placeholder identity",
+                "its measurements are ignored",
                 info["pid"],
                 expected_pid,
             )
             return
+
+        if not placeholder:
+            if info["did"] != old_id:
+                _LOGGER.warning(
+                    "The sensor at the configured address is another device; its "
+                    "measurements are ignored until the address is corrected"
+                )
+                return
+            _LOGGER.info("Verified the sensor at its new address")
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data={
+                    key: value
+                    for key, value in self.config_entry.data.items()
+                    if key != CONF_VERIFY_IDENTITY
+                },
+            )
+            if pending:
+                self._async_publish(None, pending)
+            return
+
         new_id = info["did"]
-        self._async_migrate_identity(old_id, new_id)
+        if not self._async_migrate_identity(old_id, new_id):
+            return
+        unique_id_free = not any(
+            entry.unique_id == new_id
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+            if entry.entry_id != self.config_entry.entry_id
+        )
         self.hass.config_entries.async_update_entry(
             self.config_entry,
+            unique_id=new_id if unique_id_free else self.config_entry.unique_id,
             data={
                 **self.config_entry.data,
                 CONF_DEVICE_ID: new_id,
@@ -213,14 +280,18 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 CONF_DEVICE_TYPE_CODE: info["dtp"],
             },
         )
-        _LOGGER.info("Verified the sensor's device ID; reloading the entry")
-        self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+        # The update listener reloads the entry with the verified ID.
+        _LOGGER.info("Verified the sensor's device ID")
 
     @callback
-    def _async_migrate_identity(self, old_id: str, new_id: str) -> None:
-        """Move entities and the device to the verified device ID."""
+    def _async_migrate_identity(self, old_id: str, new_id: str) -> bool:
+        """Move entities and the device to the verified device ID.
+
+        Nothing is changed when any target ID is already taken.
+        """
         entity_registry = er.async_get(self.hass)
         prefix = f"{old_id}_"
+        moves: list[tuple[str, str]] = []
         for entry in er.async_entries_for_config_entry(
             entity_registry, self.config_entry.entry_id
         ):
@@ -231,23 +302,26 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 entry.domain, entry.platform, new_unique_id
             ):
                 _LOGGER.warning(
-                    "Keeping %s on its placeholder ID; the verified ID is in use",
-                    entry.entity_id,
+                    "Keeping the placeholder ID: %s is already used by another entity",
+                    new_unique_id,
                 )
-                continue
-            entity_registry.async_update_entity(
-                entry.entity_id, new_unique_id=new_unique_id
-            )
+                return False
+            moves.append((entry.entity_id, new_unique_id))
 
         device_registry = dr.async_get(self.hass)
         entry_id = self.config_entry.entry_id
+        if _device_by_identifier(device_registry, (DOMAIN, new_id), entry_id):
+            _LOGGER.warning("Keeping the placeholder ID: its device already exists")
+            return False
+
+        for entity_id, new_unique_id in moves:
+            entity_registry.async_update_entity(entity_id, new_unique_id=new_unique_id)
         old_device = _device_by_identifier(device_registry, (DOMAIN, old_id), entry_id)
-        if old_device is not None and not _device_by_identifier(
-            device_registry, (DOMAIN, new_id), entry_id
-        ):
+        if old_device is not None:
             device_registry.async_update_device(
                 old_device.id, new_identifiers={(DOMAIN, new_id)}
             )
+        return True
 
 
 def _device_by_identifier(

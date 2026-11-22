@@ -211,6 +211,7 @@ async def test_placeholder_identity_is_replaced(
     await hass.async_block_till_done()
 
     assert entry.data["device_id"] == DEVICE_ID
+    assert entry.unique_id == DEVICE_ID
     assert registry.async_get_entity_id("sensor", DOMAIN, f"{DEVICE_ID}_temperature") == entity_id
     device_registry = dr.async_get(hass)
     assert (
@@ -222,3 +223,61 @@ async def test_placeholder_identity_is_replaced(
         is None
     )
     assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_placeholder_kept_when_the_verified_id_is_taken(
+    hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
+) -> None:
+    placeholder = "sleeping_sensor_192.0.2.10"
+    entry = _entry(device_id=placeholder)
+    await _setup(hass, entry)
+    other = MockConfigEntry(domain=DOMAIN, data={"ip_address": "192.0.2.99"})
+    other.add_to_hass(hass)
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "sensor", DOMAIN, f"{DEVICE_ID}_humidity", config_entry=other
+    )
+    sleeping_sensor["identity"].return_value = {
+        "did": DEVICE_ID,
+        "pid": "Z4tRml",
+        "dtp": "02",
+    }
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator._async_after_report()
+    await hass.async_block_till_done()
+    assert entry.data["device_id"] == placeholder
+    assert registry.async_get_entity_id("sensor", DOMAIN, f"{placeholder}_temperature")
+
+
+async def test_new_address_is_verified_before_publishing(
+    hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
+) -> None:
+    entry = _entry(verify_identity=True)
+    await _setup(hass, entry)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    registry = er.async_get(hass)
+    temperature = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{DEVICE_ID}_temperature"
+    )
+    frame = {"cmd": 10, "res": 0, "msg": {"data": {"4": 50, "8": 200, "9": 700}}}
+
+    # another device answers at the new address: nothing is published
+    sleeping_sensor["identity"].return_value = {"did": "x", "pid": "Z4tRml", "dtp": "02"}
+    await coordinator._async_handle_frame(frame)
+    await coordinator._async_after_report()
+    await hass.async_block_till_done()
+    assert hass.states.get(temperature).state == "unknown"
+    assert entry.data["verify_identity"] is True
+
+    # the right device: the held-back report is published, no reload needed
+    sleeping_sensor["identity"].return_value = {
+        "did": DEVICE_ID,
+        "pid": "Z4tRml",
+        "dtp": "02",
+    }
+    await coordinator._async_handle_frame(frame)
+    await coordinator._async_after_report()
+    await hass.async_block_till_done()
+    assert hass.states.get(temperature).state == "20.0"
+    assert "verify_identity" not in entry.data
+    assert hass.data[DOMAIN][entry.entry_id] is coordinator

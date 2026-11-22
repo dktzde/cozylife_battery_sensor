@@ -103,8 +103,8 @@ class CozyLifeConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Ask for the IP address and the model.
 
-        In advanced mode the device ID of a sensor that was configured before
-        can be entered, so its entities, device and history come back even
+        Optionally, the device ID of a sensor that was configured before can be
+        entered, so its entities, device and history come back even
         while the sensor sleeps (for example after switching from the original
         integration, which requires removing its entry).
         """
@@ -150,17 +150,16 @@ class CozyLifeConfigFlow(ConfigFlow, domain=DOMAIN):
                         },
                     )
 
-        fields: dict[Any, Any] = {
-            vol.Required(CONF_IP_ADDRESS): str,
-            vol.Required(CONF_PID, default=DEFAULT_PID): _model_selector(),
-        }
-        if self.show_advanced_options:
-            fields[vol.Optional(CONF_DEVICE_ID)] = str
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_IP_ADDRESS): str,
+                vol.Required(CONF_PID, default=DEFAULT_PID): _model_selector(),
+                vol.Optional(CONF_DEVICE_ID): str,
+            }
+        )
         return self.async_show_form(
             step_id="user",
-            data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(fields), user_input
-            ),
+            data_schema=self.add_suggested_values_to_schema(schema, user_input),
             errors=errors,
         )
 

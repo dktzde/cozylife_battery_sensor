@@ -134,12 +134,12 @@ async def test_options_flow(
     assert coordinator.schedule.lead == 7.5
 
 
-async def test_known_device_id_in_advanced_mode(
+async def test_known_device_id_of_a_sleeping_sensor(
     hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
 ) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_USER, "show_advanced_options": True},
+        context={"source": config_entries.SOURCE_USER},
     )
     assert "device_id" in result["data_schema"].schema
     with patch(READ_IDENTITY, AsyncMock(return_value=None)):
@@ -160,7 +160,7 @@ async def test_known_device_id_in_advanced_mode(
 async def test_known_device_id_must_match_an_awake_sensor(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_USER, "show_advanced_options": True},
+        context={"source": config_entries.SOURCE_USER},
     )
     identity = {"did": "feedface", "pid": "Z4tRml", "dtp": "02"}
     with patch(READ_IDENTITY, AsyncMock(return_value=identity)):
@@ -170,9 +170,3 @@ async def test_known_device_id_must_match_an_awake_sensor(hass: HomeAssistant) -
         )
     assert result["errors"] == {"device_id": "device_id_mismatch"}
 
-
-async def test_device_id_field_is_hidden_by_default(hass: HomeAssistant) -> None:
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
-    assert "device_id" not in result["data_schema"].schema

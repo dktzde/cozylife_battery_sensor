@@ -43,7 +43,7 @@ device is added again, so:
    `_temperature` in the unique ID of its entities).
 2. Delete the original's entries (the sensor and the empty *CozyLife Local* discovery entry), uninstall the original,
    install this fork as above and restart.
-3. With *Advanced mode* enabled in your user profile, add the integration with the IP address **and the device ID**.
+3. Add the integration with the IP address **and the device ID** (optional field).
    The entities come back with their old entity IDs, even while the sensor sleeps.
 
 The wake-up rhythm is learned again within the first two wake-ups (until then the integration probes continuously,

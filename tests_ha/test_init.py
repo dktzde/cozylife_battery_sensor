@@ -60,7 +60,9 @@ async def test_entities_keep_the_upstream_unique_ids(
         f"{DEVICE_ID}_battery",
         f"{DEVICE_ID}_ip_address",
     }
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, DEVICE_ID)})
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, DEVICE_ID), entry.entry_id
+    )
     assert device is not None
     assert device.model == "Z4tRml"
 
@@ -181,7 +183,9 @@ async def test_empty_device_can_be_removed(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, "sleeping_sensor_192.0.2.10")},
     )
-    live = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_ID)})
+    live = device_registry.async_get_device_by_identifier(
+        (DOMAIN, DEVICE_ID), entry.entry_id
+    )
     component = hass.data["integrations"][DOMAIN].get_component()
     assert await component.async_remove_config_entry_device(hass, entry, stale)
     assert not await component.async_remove_config_entry_device(hass, entry, live)
@@ -209,6 +213,12 @@ async def test_placeholder_identity_is_replaced(
     assert entry.data["device_id"] == DEVICE_ID
     assert registry.async_get_entity_id("sensor", DOMAIN, f"{DEVICE_ID}_temperature") == entity_id
     device_registry = dr.async_get(hass)
-    assert device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_ID)}) is not None
-    assert device_registry.async_get_device(identifiers={(DOMAIN, placeholder)}) is None
+    assert (
+        device_registry.async_get_device_by_identifier((DOMAIN, DEVICE_ID), entry.entry_id)
+        is not None
+    )
+    assert (
+        device_registry.async_get_device_by_identifier((DOMAIN, placeholder), entry.entry_id)
+        is None
+    )
     assert entry.state is ConfigEntryState.LOADED

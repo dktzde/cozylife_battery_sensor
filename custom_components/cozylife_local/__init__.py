@@ -6,7 +6,8 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 
@@ -107,3 +108,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _async_update_debug_logging(hass, entry.entry_id, False)
     return unload_ok
 
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device_entry: DeviceEntry
+) -> bool:
+    """Allow removing a device of this entry once it has no entities left.
+
+    An identity change (placeholder ID to verified device ID) or an upstream
+    release can leave an empty device behind.
+    """
+    return not er.async_entries_for_device(
+        er.async_get(hass), device_entry.id, include_disabled_entities=True
+    )

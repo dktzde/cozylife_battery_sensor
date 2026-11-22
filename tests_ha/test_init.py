@@ -171,6 +171,22 @@ async def test_discovery_controller_entry_is_removed(
     assert sensor.state is ConfigEntryState.LOADED
 
 
+async def test_empty_device_can_be_removed(
+    hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
+) -> None:
+    entry = _entry()
+    await _setup(hass, entry)
+    device_registry = dr.async_get(hass)
+    stale = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "sleeping_sensor_192.0.2.10")},
+    )
+    live = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_ID)})
+    component = hass.data["integrations"][DOMAIN].get_component()
+    assert await component.async_remove_config_entry_device(hass, entry, stale)
+    assert not await component.async_remove_config_entry_device(hass, entry, live)
+
+
 async def test_placeholder_identity_is_replaced(
     hass: HomeAssistant, sleeping_sensor: dict[str, AsyncMock]
 ) -> None:

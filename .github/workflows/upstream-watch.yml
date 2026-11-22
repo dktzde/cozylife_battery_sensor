@@ -31,5 +31,6 @@ jobs:
       - name: Compare with upstream
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           UPSTREAM: soulripper13/cozylife_local
         run: bash .github/scripts/upstream_watch.sh

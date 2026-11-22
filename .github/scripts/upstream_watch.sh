@@ -7,7 +7,8 @@
 # .github/upstream-baseline. Close the issue after porting or dismissing the
 # changes; the next run then starts from that issue's head.
 #
-# Environment: GH_TOKEN, UPSTREAM (owner/repo), optional DRY_RUN=1.
+# Environment: GH_TOKEN, GH_REPO (this repository, so gh never picks the
+# upstream remote), UPSTREAM (owner/repo), optional DRY_RUN=1.
 set -euo pipefail
 
 UPSTREAM="${UPSTREAM:-soulripper13/cozylife_local}"
@@ -62,8 +63,11 @@ for file in "${ALWAYS[@]}"; do
   fi
 done
 for file in "${SHARED[@]}"; do
-  if git diff "$base" "$head" -- "$COMPONENT/$file" \
-    | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ' | grep -qiE "$KEYWORDS"; then
+  # Count instead of grep -q: an early exit would break the pipe under pipefail.
+  hits=$(git diff "$base" "$head" -- "$COMPONENT/$file" \
+    | { grep -E '^[+-]' || true; } | { grep -vE '^(\+\+\+|---) ' || true; } \
+    | { grep -ciE "$KEYWORDS" || true; })
+  if [ "${hits:-0}" -gt 0 ]; then
     relevant+=("$COMPONENT/$file")
   fi
 done
@@ -87,7 +91,7 @@ version=$(git show "${head}:${COMPONENT}/manifest.json" | jq -r '.version // "?"
   done
   echo
   echo "### Commits"
-  git log --no-merges --format='- %h %s' "${base}..${head}" -- "${relevant[@]}" | head -n 50
+  git log --no-merges --format='- %h %s' "${base}..${head}" -- "${relevant[@]}" | sed -n '1,50p'
   echo
   echo "Port what is useful in a normal PR, then close this issue. The next check starts from \`${head:0:7}\`."
 } > upstream-watch.md
@@ -100,6 +104,10 @@ if [ "${DRY_RUN:-0}" = 1 ]; then
 fi
 
 gh label create "$LABEL" --color FBCA04 --description "Upstream changes to review" >/dev/null 2>&1 || true
+if [ -n "$number" ] && [ "$state" = "OPEN" ]; then
+  # The maintainer may have closed it meanwhile; never write a new head into a closed issue.
+  state=$(gh issue view "$number" --json state --jq .state)
+fi
 if [ -n "$number" ] && [ "$state" = "OPEN" ]; then
   gh issue edit "$number" --title "$title" --body-file upstream-watch.md
   gh issue comment "$number" --body "More upstream commits, now up to ${head:0:7}. The description above is updated."
